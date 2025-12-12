@@ -29,5 +29,7 @@ public class AppointmentEntity {
 
     private String icsUid;
 
+    private boolean notified = false;
+
 
 }

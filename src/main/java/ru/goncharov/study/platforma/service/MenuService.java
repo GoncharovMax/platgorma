@@ -28,8 +28,7 @@ public class MenuService {
                 List.of(
                         new InlineKeyboardRow(InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()),
                         new InlineKeyboardRow(InlineKeyboardButton.builder().text("Я первый раз").callbackData("test").build()),
-                        new InlineKeyboardRow(InlineKeyboardButton.builder().text("Запись на приём").callbackData("record").build()),
-                        new InlineKeyboardRow(InlineKeyboardButton.builder().text("Каталог").callbackData("catalog").build())
+                        new InlineKeyboardRow(InlineKeyboardButton.builder().text("Запись на приём").callbackData("record").build())
                 )
         );
 
@@ -46,14 +45,6 @@ public class MenuService {
                         .build()
         );
     }
-
-    @SneakyThrows
-    public void sendCatalog(Long chatId) {
-        telegramClient.execute(
-                SendMessage.builder()
-                        .chatId(chatId)
-                        .text("Каталог скоро будет готов!")
-                        .build()
-        );
-    }
 }
+
+

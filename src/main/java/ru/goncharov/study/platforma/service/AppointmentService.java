@@ -10,6 +10,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import ru.goncharov.study.platforma.Entity.AppointmentEntity;
+import ru.goncharov.study.platforma.Entity.SurveyState;
 import ru.goncharov.study.platforma.Entity.UserSurvey;
 import ru.goncharov.study.platforma.repository.AppointmentRepository;
 import ru.goncharov.study.platforma.repository.UserSurveyRepository;
@@ -20,6 +21,7 @@ import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 
 
 @Slf4j
@@ -28,7 +30,9 @@ import java.util.List;
 public class AppointmentService {
 
     private final AppointmentRepository repo;
+    private final UserSurveyRepository surveyRepo;
     private final TelegramClient telegramClient;
+    private final YandexCalendarService yandexCalendarService;
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
@@ -80,15 +84,18 @@ public class AppointmentService {
                 .map(AppointmentEntity::getTime)
                 .toList();
 
-        List<InlineKeyboardRow> rows = allSlots.stream()
-                .filter(t -> !booked.contains(t))
-                .map(t -> new InlineKeyboardRow(
-                        InlineKeyboardButton.builder()
-                                .text(t.toString())
-                                .callbackData("TIME_" + date + "_" + t)
-                                .build()
-                ))
-                .toList();
+        // Используем изменяемый список (ArrayList) — чтобы можно было добавлять "нет слотов"
+        List<InlineKeyboardRow> rows = new java.util.ArrayList<>(
+                allSlots.stream()
+                        .filter(t -> !booked.contains(t))
+                        .map(t -> new InlineKeyboardRow(
+                                InlineKeyboardButton.builder()
+                                        .text(t.toString())
+                                        .callbackData("TIME_" + date + "_" + t)
+                                        .build()
+                        ))
+                        .toList()
+        );
 
         // Если свободных слотов нет
         if (rows.isEmpty()) {
@@ -126,14 +133,68 @@ public class AppointmentService {
             return;
         }
 
-        // Создаем запись через сеттеры
+        // --- Проверяем: прошёл ли пользователь опрос "Я первый раз" ---
+        Optional<UserSurvey> surveyOpt = surveyRepo.findByChatId(chatId);
+        if (surveyOpt.isEmpty() || surveyOpt.get().getState() != SurveyState.FINISHED) {
+            // Просим пройти опрос прежде чем записываться
+            InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
+                    List.of(
+                            new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("Пройти опрос \"Я первый раз\"").callbackData("test").build()
+                            ),
+                            new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()
+                            )
+                    )
+            );
+
+            telegramClient.execute(
+                    SendMessage.builder()
+                            .chatId(chatId)
+                            .text("Перед записью на приём необходимо пройти короткий опрос. Пожалуйста, заполните анкету — это займёт пару минут.")
+                            .replyMarkup(markup)
+                            .build()
+            );
+            return;
+        }
+
+        // --- Создаём запись (только если опрос пройден) ---
         AppointmentEntity ap = new AppointmentEntity();
         ap.setChatId(chatId);
         ap.setDate(date);
         ap.setTime(time);
+
+        // Получаем данные из опроса для сохранения и для календаря
+        UserSurvey survey = surveyOpt.get();
+        String clientName = survey.getName() != null ? survey.getName() : "Не указано";
+        String clientPhone = survey.getPhone() != null ? survey.getPhone() : "Не указано";
+        String clientQuestion = survey.getQuestionAbout() != null ? survey.getQuestionAbout() : "Не указано";
+
+        ap.setFullName(clientName);
+
+        // 1) Сохраняем запись в БД
         repo.save(ap);
 
-        // Создаём сообщение о записи с кнопками меню
+        // 2) Создаём событие в Яндекс.Календаре с детальным DESCRIPTION
+        String title = "Запись: " + clientName;
+        String description = "Имя: " + clientName + "\n" +
+                "Телефон: " + clientPhone + "\n" +
+                "Вопрос/проект: " + clientQuestion + "\n" +
+                "Дата: " + date.format(DATE_FORMAT) + "\n" +
+                "Время: " + time.toString() + "\n" +
+                "ChatID: " + chatId;
+
+        String uid = yandexCalendarService.createEvent(title, description, chatId, date, time);
+
+        if (uid != null) {
+            ap.setIcsUid(uid);
+            repo.save(ap); // обновим запись с UID
+            log.info("Событие в Яндекс.Календаре создано, UID сохранён: {}", uid);
+        } else {
+            log.warn("Событие в Яндекс.Календаре не было создано (uid == null).");
+        }
+
+        // 3) Отправляем пользователю подтверждение + кнопки меню
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
                 List.of(
                         new InlineKeyboardRow(
@@ -147,11 +208,13 @@ public class AppointmentService {
 
         SendMessage msg = SendMessage.builder()
                 .chatId(chatId)
-                .text("Запись создана!\n📅 " + date.format(DATE_FORMAT) + "\n⏰ " + time)
+                .text("Запись создана!\n📅 " + date.format(DATE_FORMAT) + "\n⏰ " + time +
+                        "\n\nИмя: " + clientName +
+                        "\nТелефон: " + clientPhone +
+                        "\nВопрос: " + clientQuestion)
                 .replyMarkup(markup)
                 .build();
 
         telegramClient.execute(msg);
     }
-
 }
