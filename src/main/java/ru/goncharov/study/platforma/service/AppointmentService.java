@@ -33,11 +33,17 @@ public class AppointmentService {
     private final UserSurveyRepository surveyRepo;
     private final TelegramClient telegramClient;
     private final YandexCalendarService yandexCalendarService;
+    private final SurveyService surveyService; // внедряем SurveyService
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
     // Начало записи на приём
     public void start(Long chatId) throws Exception {
+        Optional<UserSurvey> surveyOpt = surveyRepo.findByChatId(chatId);
+        if (surveyOpt.isEmpty() || surveyOpt.get().getState() != SurveyState.FINISHED) {
+            surveyService.start(chatId); // запускаем опрос
+            return;
+        }
         sendMonth(chatId, YearMonth.now());
     }
 
@@ -68,15 +74,9 @@ public class AppointmentService {
     // Формирование клавиатуры со свободными временем
     private InlineKeyboardMarkup buildTimeKeyboard(LocalDate date) {
         List<LocalTime> allSlots = List.of(
-                LocalTime.of(9, 0),
-                LocalTime.of(10, 0),
-                LocalTime.of(11, 0),
-                LocalTime.of(12, 0),
-                LocalTime.of(13, 0),
-                LocalTime.of(14, 0),
-                LocalTime.of(15, 0),
-                LocalTime.of(16, 0),
-                LocalTime.of(17, 0)
+                LocalTime.of(9, 0), LocalTime.of(10, 0), LocalTime.of(11, 0),
+                LocalTime.of(12, 0), LocalTime.of(13, 0), LocalTime.of(14, 0),
+                LocalTime.of(15, 0), LocalTime.of(16, 0), LocalTime.of(17, 0)
         );
 
         List<LocalTime> booked = repo.findAll().stream()
@@ -84,7 +84,6 @@ public class AppointmentService {
                 .map(AppointmentEntity::getTime)
                 .toList();
 
-        // Используем изменяемый список (ArrayList) — чтобы можно было добавлять "нет слотов"
         List<InlineKeyboardRow> rows = new java.util.ArrayList<>(
                 allSlots.stream()
                         .filter(t -> !booked.contains(t))
@@ -97,7 +96,6 @@ public class AppointmentService {
                         .toList()
         );
 
-        // Если свободных слотов нет
         if (rows.isEmpty()) {
             InlineKeyboardButton btn = InlineKeyboardButton.builder()
                     .text("Свободного времени нет, выберите другую дату")
@@ -133,88 +131,54 @@ public class AppointmentService {
             return;
         }
 
-        // --- Проверяем: прошёл ли пользователь опрос "Я первый раз" ---
+        // Проверка опроса
         Optional<UserSurvey> surveyOpt = surveyRepo.findByChatId(chatId);
         if (surveyOpt.isEmpty() || surveyOpt.get().getState() != SurveyState.FINISHED) {
-            // Просим пройти опрос прежде чем записываться
-            InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
-                    List.of(
-                            new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("Пройти опрос \"Я первый раз\"").callbackData("test").build()
-                            ),
-                            new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()
-                            )
-                    )
-            );
-
-            telegramClient.execute(
-                    SendMessage.builder()
-                            .chatId(chatId)
-                            .text("Перед записью на приём необходимо пройти короткий опрос. Пожалуйста, заполните анкету — это займёт пару минут.")
-                            .replyMarkup(markup)
-                            .build()
-            );
+            surveyService.start(chatId);
             return;
         }
 
-        // --- Создаём запись (только если опрос пройден) ---
+        // Создание записи
+        UserSurvey survey = surveyOpt.get();
         AppointmentEntity ap = new AppointmentEntity();
         ap.setChatId(chatId);
         ap.setDate(date);
         ap.setTime(time);
-
-        // Получаем данные из опроса для сохранения и для календаря
-        UserSurvey survey = surveyOpt.get();
-        String clientName = survey.getName() != null ? survey.getName() : "Не указано";
-        String clientPhone = survey.getPhone() != null ? survey.getPhone() : "Не указано";
-        String clientQuestion = survey.getQuestionAbout() != null ? survey.getQuestionAbout() : "Не указано";
-
-        ap.setFullName(clientName);
-
-        // 1) Сохраняем запись в БД
+        ap.setFullName(survey.getName() != null ? survey.getName() : "Не указано");
         repo.save(ap);
 
-        // 2) Создаём событие в Яндекс.Календаре с детальным DESCRIPTION
-        String title = "Запись: " + clientName;
-        String description = "Имя: " + clientName + "\n" +
-                "Телефон: " + clientPhone + "\n" +
-                "Вопрос/проект: " + clientQuestion + "\n" +
+        // Создание события в Яндекс.Календаре
+        String title = "Запись: " + survey.getName();
+        String description = "Имя: " + survey.getName() + "\n" +
+                "Телефон: " + survey.getPhone() + "\n" +
+                "Вопрос/проект: " + survey.getQuestionAbout() + "\n" +
                 "Дата: " + date.format(DATE_FORMAT) + "\n" +
-                "Время: " + time.toString() + "\n" +
+                "Время: " + time + "\n" +
                 "ChatID: " + chatId;
 
         String uid = yandexCalendarService.createEvent(title, description, chatId, date, time);
-
         if (uid != null) {
             ap.setIcsUid(uid);
-            repo.save(ap); // обновим запись с UID
-            log.info("Событие в Яндекс.Календаре создано, UID сохранён: {}", uid);
-        } else {
-            log.warn("Событие в Яндекс.Календаре не было создано (uid == null).");
+            repo.save(ap);
         }
 
-        // 3) Отправляем пользователю подтверждение + кнопки меню
+        // Подтверждение пользователю
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
                 List.of(
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()
-                        ),
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder().text("Запись на приём").callbackData("record").build()
-                        )
+                        new InlineKeyboardRow(InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()),
+                        new InlineKeyboardRow(InlineKeyboardButton.builder().text("Запись на приём").callbackData("record").build())
                 )
         );
 
-        SendMessage msg = SendMessage.builder()
-                .chatId(chatId)
-                .text("Запись создана!\n📅 " + date.format(DATE_FORMAT) + "\n⏰ " + time +
-                        "\n\nИмя: " + clientName +
-                        "\nТелефон: " + clientPhone +
-                        "\nВопрос: " + clientQuestion)
-                .replyMarkup(markup)
-                .build();
-
-        telegramClient.execute(msg);
+        telegramClient.execute(
+                SendMessage.builder()
+                        .chatId(chatId)
+                        .text("Запись создана!\n📅 " + date.format(DATE_FORMAT) + "\n⏰ " + time +
+                                "\n\nИмя: " + survey.getName() +
+                                "\nТелефон: " + survey.getPhone() +
+                                "\nПроект: " + survey.getQuestionAbout())
+                        .replyMarkup(markup)
+                        .build()
+        );
     }
 }
