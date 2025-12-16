@@ -11,8 +11,6 @@ import java.time.LocalTime;
 @Entity
 @Table (name = "appointments")
 @Data
-@Setter
-@Getter
 public class AppointmentEntity {
 
     @Id

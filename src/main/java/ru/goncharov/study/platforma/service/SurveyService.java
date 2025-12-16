@@ -40,14 +40,16 @@ public class SurveyService {
                 survey.setPhone(text);
                 survey.setState(SurveyState.ASK_QUESTION);
                 repo.save(survey);
-                send(chatId, "Что хотите уточнить или какой проект планируете?");
+                send(chatId, "С каким вопросом вы обращаетесь?\n" +
+                        "Напишите коротко — мы подготовимся к встрече.\n" +
+                        "(ввод текста) Например: «дизайн квартиры 60 м²», «подбор ламината и плитки», «ремонт под ключ»");
                 return true;
             }
             case ASK_QUESTION -> {
                 survey.setQuestionAbout(text);
                 survey.setState(SurveyState.FINISHED);
                 repo.save(survey);
-                sendEndSurvey(chatId); // вместо send(chatId, "Спасибо! ...")
+                sendEndSurvey(chatId);
                 return true;
             }
             default -> {
@@ -74,25 +76,21 @@ public class SurveyService {
 
     @SneakyThrows
     private void sendEndSurvey(Long chatId) {
-        // Сообщение о завершении опроса
         SendMessage msg = SendMessage.builder()
                 .chatId(chatId)
-                .text("Спасибо! Мы сохранили ваши ответы.")
+                .text("Спасибо \uD83E\uDD0D Мы получим вашу заявку после записи на приём.")
+                .replyMarkup(new InlineKeyboardMarkup(
+                        List.of(
+                                new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()
+                                ),
+                                new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("Запись на приём").callbackData("record").build()
+                                )
+                        )
+                ))
                 .build();
 
-        // Кнопки "Главная" и "Запись на приём"
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
-                List.of(
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()
-                        ),
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder().text("Запись на приём").callbackData("record").build()
-                        )
-                )
-        );
-
-        msg.setReplyMarkup(markup);
         telegramClient.execute(msg);
     }
 }
