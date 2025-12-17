@@ -1,5 +1,6 @@
 package ru.goncharov.study.platforma.service;
 
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -12,16 +13,19 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import ru.goncharov.study.platforma.Entity.AppointmentEntity;
 import ru.goncharov.study.platforma.Entity.SurveyState;
 import ru.goncharov.study.platforma.Entity.UserSurvey;
+import ru.goncharov.study.platforma.dto.AppointmentDto;
+import ru.goncharov.study.platforma.mapper.AppointmentMapper;
 import ru.goncharov.study.platforma.repository.AppointmentRepository;
 import ru.goncharov.study.platforma.repository.UserSurveyRepository;
 import ru.goncharov.study.platforma.util.CalendarUtils;
+import ru.goncharov.study.platforma.dto.UserSurveyDto;
+import ru.goncharov.study.platforma.mapper.UserSurveyMapper;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Optional;
 
 
 @Slf4j
@@ -29,23 +33,31 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AppointmentService {
 
-    private final AppointmentRepository repo;
+    private final AppointmentRepository appointmentRepo;
     private final UserSurveyRepository surveyRepo;
     private final TelegramClient telegramClient;
-    private final YandexCalendarService yandexCalendarService;
-    private final SurveyService surveyService; // внедряем SurveyService
+    private final YandexCalendarService calendarService;
+    private final SurveyService surveyService;
+    private final TimeSlotService timeSlotService;
 
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+    private static final DateTimeFormatter DATE_FORMAT =
+            DateTimeFormatter.ofPattern("dd-MM-yyyy");
+
 
     // Начало записи на приём
     public void start(Long chatId) throws Exception {
-        Optional<UserSurvey> surveyOpt = surveyRepo.findByChatId(chatId);
-        if (surveyOpt.isEmpty() || surveyOpt.get().getState() != SurveyState.FINISHED) {
-            surveyService.start(chatId); // запускаем опрос
+        UserSurvey survey = surveyRepo.findByChatId(chatId)
+                .orElseThrow();
+        UserSurveyDto surveyDto = UserSurveyMapper.toDto(survey);
+
+        if (surveyDto.state() != SurveyState.FINISHED) {
+            surveyService.start(chatId);
             return;
         }
+
         sendMonth(chatId, YearMonth.now());
     }
+
 
     @SneakyThrows
     public void sendMonth(Long chatId, YearMonth ym) {
@@ -62,121 +74,172 @@ public class AppointmentService {
     @SneakyThrows
     public void handleDay(Long chatId, String data) {
         LocalDate date = LocalDate.parse(data.substring(4));
+
         telegramClient.execute(
                 SendMessage.builder()
                         .chatId(chatId)
-                        .text("Вы выбрали " + date.format(DATE_FORMAT) + ". Теперь выберите время:")
+                        .text("Вы выбрали " + date.format(DATE_FORMAT)
+                                + ". Теперь выберите время:")
                         .replyMarkup(buildTimeKeyboard(date))
                         .build()
         );
     }
 
-    // Формирование клавиатуры со свободными временем
-    private InlineKeyboardMarkup buildTimeKeyboard(LocalDate date) {
-        List<LocalTime> allSlots = List.of(
-                LocalTime.of(9, 0), LocalTime.of(10, 0), LocalTime.of(11, 0),
-                LocalTime.of(12, 0), LocalTime.of(13, 0), LocalTime.of(14, 0),
-                LocalTime.of(15, 0), LocalTime.of(16, 0), LocalTime.of(17, 0)
+
+    // Обработка выбора времени
+    @Transactional
+    @SneakyThrows
+    public void handleTime(Long chatId, String data) {
+
+        var parts = data.split("_", 3);
+        LocalDate date = LocalDate.parse(parts[1]);
+        LocalTime time = LocalTime.parse(parts[2]);
+
+        if (appointmentRepo.existsByDateAndTime(date, time)) {
+            sendBusy(chatId, date);
+            return;
+        }
+
+        UserSurvey survey = surveyRepo.findByChatId(chatId).orElseThrow();
+        UserSurveyDto surveyDto = UserSurveyMapper.toDto(survey);
+
+        AppointmentDto dto = new AppointmentDto(
+                null,
+                chatId,
+                date,
+                time,
+                surveyDto.name(),
+                null,
+                false
         );
 
-        List<LocalTime> booked = repo.findAll().stream()
-                .filter(a -> a.getDate().equals(date))
+        // 1️⃣ создаём событие в календаре
+        String icsUid = calendarService.createEvent(
+                surveyDto.name(),
+                surveyDto.phone(),
+                surveyDto.chatId(),
+                date,
+                time
+        );
+
+        // 2️⃣ кладём uid в DTO
+        dto = new AppointmentDto(
+                dto.id(),
+                dto.chatId(),
+                dto.date(),
+                dto.time(),
+                dto.fullName(),
+                icsUid,
+                false
+        );
+
+        // 3️⃣ сохраняем в БД
+        AppointmentEntity ap = AppointmentMapper.toEntity(dto);
+        appointmentRepo.save(ap);
+
+        sendConfirmation(chatId, survey, date, time);
+    }
+
+    private void sendBusy(Long chatId, LocalDate date) throws Exception {
+        telegramClient.execute(
+                SendMessage.builder()
+                        .chatId(chatId)
+                        .text("Время занято, выберите другое")
+                        .replyMarkup(buildTimeKeyboard(date))
+                        .build()
+        );
+    }
+
+    private String buildDescription(
+            UserSurvey survey,
+            Long chatId,
+            LocalDate date,
+            LocalTime time
+    ) {
+        return """
+            Имя: %s
+            Телефон: %s
+            Проект: %s
+            Дата: %s
+            Время: %s
+            ChatID: %s
+            """.formatted(
+                survey.getName(),
+                survey.getPhone(),
+                survey.getQuestionAbout(),
+                date.format(DATE_FORMAT),
+                time,
+                chatId
+        );
+    }
+
+    private InlineKeyboardMarkup buildTimeKeyboard(LocalDate date) {
+
+        List<LocalTime> booked = appointmentRepo.findByDate(date)
+                .stream()
                 .map(AppointmentEntity::getTime)
                 .toList();
 
-        List<InlineKeyboardRow> rows = new java.util.ArrayList<>(
-                allSlots.stream()
-                        .filter(t -> !booked.contains(t))
-                        .map(t -> new InlineKeyboardRow(
-                                InlineKeyboardButton.builder()
-                                        .text(t.toString())
-                                        .callbackData("TIME_" + date + "_" + t)
-                                        .build()
-                        ))
-                        .toList()
-        );
+        var free = timeSlotService.availableSlots(date, booked);
 
-        if (rows.isEmpty()) {
-            InlineKeyboardButton btn = InlineKeyboardButton.builder()
-                    .text("Свободного времени нет, выберите другую дату")
-                    .callbackData("record")
-                    .build();
-            rows.add(new InlineKeyboardRow(btn));
+        if (free.isEmpty()) {
+            return new InlineKeyboardMarkup(
+                    List.of(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder()
+                                    .text("Нет свободного времени")
+                                    .callbackData("record")
+                                    .build()
+                    ))
+            );
         }
+
+        List<InlineKeyboardRow> rows = free.stream()
+                .map(t -> new InlineKeyboardRow(
+                        InlineKeyboardButton.builder()
+                                .text(t.toString())
+                                .callbackData("TIME_" + date + "_" + t)
+                                .build()
+                ))
+                .toList();
 
         return new InlineKeyboardMarkup(rows);
     }
 
-    // Обработка выбора времени
     @SneakyThrows
-    public void handleTime(Long chatId, String data) {
-        String[] parts = data.split("_", 3);
-        if (parts.length < 3) return;
-
-        LocalDate date = LocalDate.parse(parts[1]);
-        LocalTime time = LocalTime.parse(parts[2]);
-
-        // Проверка занятости
-        boolean busy = repo.findAll().stream()
-                .anyMatch(a -> a.getDate().equals(date) && a.getTime().equals(time));
-
-        if (busy) {
-            telegramClient.execute(
-                    SendMessage.builder()
-                            .chatId(chatId)
-                            .text("Извините, выбранное время занято. Пожалуйста, выберите другое время.")
-                            .replyMarkup(buildTimeKeyboard(date))
-                            .build()
-            );
-            return;
-        }
-
-        // Проверка опроса
-        Optional<UserSurvey> surveyOpt = surveyRepo.findByChatId(chatId);
-        if (surveyOpt.isEmpty() || surveyOpt.get().getState() != SurveyState.FINISHED) {
-            surveyService.start(chatId);
-            return;
-        }
-
-        // Создание записи
-        UserSurvey survey = surveyOpt.get();
-        AppointmentEntity ap = new AppointmentEntity();
-        ap.setChatId(chatId);
-        ap.setDate(date);
-        ap.setTime(time);
-        ap.setFullName(survey.getName() != null ? survey.getName() : "Не указано");
-        repo.save(ap);
-
-        // Создание события в Яндекс.Календаре
-        String title = "Запись: " + survey.getName();
-        String description = "Имя: " + survey.getName() + "\n" +
-                "Телефон: " + survey.getPhone() + "\n" +
-                "Вопрос/проект: " + survey.getQuestionAbout() + "\n" +
-                "Дата: " + date.format(DATE_FORMAT) + "\n" +
-                "Время: " + time + "\n" +
-                "ChatID: " + chatId;
-
-        String uid = yandexCalendarService.createEvent(title, description, chatId, date, time);
-        if (uid != null) {
-            ap.setIcsUid(uid);
-            repo.save(ap);
-        }
-
-        // Подтверждение пользователю
+    private void sendConfirmation(
+            Long chatId,
+            UserSurvey survey,
+            LocalDate date,
+            LocalTime time
+    ) {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
                 List.of(
-                        new InlineKeyboardRow(InlineKeyboardButton.builder().text("Главная").callbackData("menu").build()),
-                        new InlineKeyboardRow(InlineKeyboardButton.builder().text("Запись на приём").callbackData("record").build())
+                        new InlineKeyboardRow(
+                                InlineKeyboardButton.builder()
+                                        .text("Главная")
+                                        .callbackData("menu")
+                                        .build()
+                        ),
+                        new InlineKeyboardRow(
+                                InlineKeyboardButton.builder()
+                                        .text("Запись на приём")
+                                        .callbackData("record")
+                                        .build()
+                        )
                 )
         );
 
         telegramClient.execute(
                 SendMessage.builder()
                         .chatId(chatId)
-                        .text("Запись создана!\n📅 " + date.format(DATE_FORMAT) + "\n⏰ " + time +
-                                "\n\nИмя: " + survey.getName() +
-                                "\nТелефон: " + survey.getPhone() +
-                                "\nПроект: " + survey.getQuestionAbout())
+                        .text(
+                                "Запись создана!\n\n" +
+                                        "📅 " + date.format(DATE_FORMAT) + "\n" +
+                                        "⏰ " + time + "\n\n" +
+                                        "Имя: " + survey.getName() + "\n" +
+                                        "Телефон: " + survey.getPhone() + "\n" +
+                                        "Проект: " + survey.getQuestionAbout()
+                        )
                         .replyMarkup(markup)
                         .build()
         );

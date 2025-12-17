@@ -1,4 +1,4 @@
-package ru.goncharov.study.platforma.Entity;
+package ru.goncharov.study.platforma.dto;
 
 import java.time.LocalDate;
 import java.time.LocalTime;

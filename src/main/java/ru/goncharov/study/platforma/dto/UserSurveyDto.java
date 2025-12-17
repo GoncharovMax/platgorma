@@ -1,4 +1,6 @@
-package ru.goncharov.study.platforma.Entity;
+package ru.goncharov.study.platforma.dto;
+
+import ru.goncharov.study.platforma.Entity.SurveyState;
 
 public record UserSurveyDto(
         Long id,
