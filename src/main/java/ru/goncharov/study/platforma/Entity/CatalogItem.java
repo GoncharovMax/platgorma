@@ -23,8 +23,8 @@ public class CatalogItem {
     @Column(length = 2000)
     private String description;
 
-    @Column(name = "photo_id")
-    private String photoId;
+    @Column(name = "photo_url", length = 1000)
+    private String photoUrl;
 
     private String category;
 }

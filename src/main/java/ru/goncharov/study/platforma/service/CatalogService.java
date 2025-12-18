@@ -5,12 +5,9 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
-import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import ru.goncharov.study.platforma.Entity.CatalogItem;
 import ru.goncharov.study.platforma.repository.CatalogItemRepository;
@@ -25,35 +22,14 @@ public class CatalogService {
     private final CatalogItemRepository repository;
     private final TelegramClient telegramClient;
 
-    // ===== 1. Показ категорий =====
     @SneakyThrows
     public void showCategories(Long chatId) {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
                 List.of(
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder()
-                                        .text("🪵 Кварцевый ламинат")
-                                        .callbackData("CAT_QUARTZ")
-                                        .build()
-                        ),
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder()
-                                        .text("🧱 Плитка")
-                                        .callbackData("CAT_TILE")
-                                        .build()
-                        ),
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder()
-                                        .text("🖼 Обои")
-                                        .callbackData("CAT_WALLPAPER")
-                                        .build()
-                        ),
-                        new InlineKeyboardRow(
-                                InlineKeyboardButton.builder()
-                                        .text("⬅️ В меню")
-                                        .callbackData("menu")
-                                        .build()
-                        )
+                        row("🪵 Кварцевый ламинат", "CAT_QUARTZ"),
+                        row("🧱 Плитка", "CAT_TILE"),
+                        row("🖼 Обои", "CAT_WALLPAPER"),
+                        row("⬅️ В меню", "menu")
                 )
         );
 
@@ -66,7 +42,7 @@ public class CatalogService {
         );
     }
 
-    // ===== 2. Показ товаров категории =====
+    @SneakyThrows
     public void showCategory(Long chatId, String category) {
         List<CatalogItem> items = repository.findByCategory(category);
 
@@ -76,47 +52,42 @@ public class CatalogService {
         }
 
         for (CatalogItem item : items) {
-            SendPhoto sendPhoto = SendPhoto.builder()
-                    .chatId(chatId.toString())
-                    .photo(new InputFile(item.getPhotoId()))
-                    .caption(
-                            "<b>" + item.getName() + "</b>\n\n" +
-                                    item.getDescription()
+            InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
+                    List.of(
+                            row("🖼 Посмотреть фото", item.getPhotoUrl()),
+                            row("⬅️ Назад", "catalog")
                     )
-                    .parseMode("HTML")
-                    .build();
+            );
 
-            try {
-                telegramClient.execute(sendPhoto);
-            } catch (TelegramApiException e) {
-                log.error("Ошибка отправки фото itemId={}", item.getId(), e);
-            }
+            telegramClient.execute(
+                    SendMessage.builder()
+                            .chatId(chatId)
+                            .text(
+                                    "📦 <b>" + item.getName() + "</b>\n\n" +
+                                            item.getDescription()
+                            )
+                            .parseMode("HTML")
+                            .replyMarkup(markup)
+                            .build()
+            );
         }
-
-        sendBack(chatId);
     }
 
-    // ===== 3. Кнопка назад =====
-    @SneakyThrows
-    private void sendBack(Long chatId) {
-        telegramClient.execute(
-                SendMessage.builder()
-                        .chatId(chatId)
-                        .text("Вернуться:")
-                        .replyMarkup(
-                                new InlineKeyboardMarkup(
-                                        List.of(
-                                                new InlineKeyboardRow(
-                                                        InlineKeyboardButton.builder()
-                                                                .text("⬅️ Назад к категориям")
-                                                                .callbackData("catalog")
-                                                                .build()
-                                                )
-                                        )
-                                )
-                        )
-                        .build()
-        );
+    private InlineKeyboardRow row(String text, String data) {
+
+        InlineKeyboardButton btn = InlineKeyboardButton.builder()
+                .text(text)
+                .build();
+
+        if (data == null || data.isBlank()) {
+            btn.setCallbackData("noop");
+        } else if (data.startsWith("http")) {
+            btn.setUrl(data);
+        } else {
+            btn.setCallbackData(data);
+        }
+
+        return new InlineKeyboardRow(btn);
     }
 
     @SneakyThrows
