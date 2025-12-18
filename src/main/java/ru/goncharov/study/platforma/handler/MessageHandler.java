@@ -24,5 +24,10 @@ public class MessageHandler {
 
         if ("/start".equals(text)) menuService.sendMainMenu(chatId);
         else menuService.sendUnknown(chatId);
+
+        if (msg.hasPhoto()) {
+            String fileId = msg.getPhoto().getLast().getFileId();
+            System.out.println("PHOTO_ID = " + fileId);
+        }
     }
 }

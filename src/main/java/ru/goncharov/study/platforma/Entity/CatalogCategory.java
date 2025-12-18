@@ -1,18 +1,17 @@
 package ru.goncharov.study.platforma.Entity;
 
 public enum CatalogCategory {
+    QUARTZ_LAMINATE("Кварцевый ламинат"),
+    TILE("Плитка"),
+    WALLPAPER("Обои");
 
-    INTERIOR("Интерьер и отделка"),
-    FLOORING("Напольные покрытия"),
-    MATERIALS("Стройматериалы");
+    private final String title;
 
-    private final String displayName;
-
-    CatalogCategory(String displayName) {
-        this.displayName = displayName;
+    CatalogCategory(String title) {
+        this.title = title;
     }
 
-    public String getDisplayName() {
-        return displayName;
+    public String getTitle() {
+        return title;
     }
 }

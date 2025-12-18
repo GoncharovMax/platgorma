@@ -1,21 +1,30 @@
 package ru.goncharov.study.platforma.Entity;
 
-import java.util.List;
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+@Entity
+@Table(name = "catalog_items")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class CatalogItem {
-    private final String name;
-    private final List<String> subItems;
 
-    public CatalogItem(String name, List<String> subItems) {
-        this.name = name;
-        this.subItems = subItems;
-    }
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    public String getName() {
-        return name;
-    }
+    private String name;
 
-    public List<String> getSubItems() {
-        return subItems;
-    }
+    @Column(length = 2000)
+    private String description;
+
+    @Column(name = "photo_id")
+    private String photoId;
+
+    private String category;
 }
