@@ -3,6 +3,7 @@ package ru.goncharov.study.platforma.dto;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
+// Хранит данные записи на приём
 public record AppointmentDto(
         Long id,
         Long chatId,

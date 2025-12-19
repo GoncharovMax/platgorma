@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 @Data
 @Component
+// Связываем поля класса со свойствами вида bot.token, bot.username
 @ConfigurationProperties(prefix = "bot")
 public class BotProperties {
     private String token;

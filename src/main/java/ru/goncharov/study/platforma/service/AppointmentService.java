@@ -113,16 +113,16 @@ public class AppointmentService {
                 false
         );
 
-        // 1️⃣ создаём событие в календаре
+        // создаём событие в календаре
         String icsUid = calendarService.createEvent(
                 surveyDto.name(),
-                surveyDto.phone(),
-                surveyDto.chatId(),
+                buildDescription(survey, chatId, date, time),
+                chatId,
                 date,
                 time
         );
 
-        // 2️⃣ кладём uid в DTO
+        // кладём uid в DTO
         dto = new AppointmentDto(
                 dto.id(),
                 dto.chatId(),
@@ -133,7 +133,7 @@ public class AppointmentService {
                 false
         );
 
-        // 3️⃣ сохраняем в БД
+        // сохраняем в БД
         AppointmentEntity ap = AppointmentMapper.toEntity(dto);
         appointmentRepo.save(ap);
 

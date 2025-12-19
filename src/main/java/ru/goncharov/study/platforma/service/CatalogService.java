@@ -9,6 +9,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+import ru.goncharov.study.platforma.CallbackData;
+import ru.goncharov.study.platforma.Entity.CatalogCategory;
 import ru.goncharov.study.platforma.Entity.CatalogItem;
 import ru.goncharov.study.platforma.repository.CatalogItemRepository;
 
@@ -22,14 +24,15 @@ public class CatalogService {
     private final CatalogItemRepository repository;
     private final TelegramClient telegramClient;
 
+    // Показать список категорий
     @SneakyThrows
     public void showCategories(Long chatId) {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
                 List.of(
-                        row("🪵 Кварцевый ламинат", "CAT_QUARTZ"),
-                        row("🧱 Плитка", "CAT_TILE"),
-                        row("🖼 Обои", "CAT_WALLPAPER"),
-                        row("⬅️ В меню", "menu")
+                        row("🪵 Кварцевый ламинат", CallbackData.CAT_QUARTZ),
+                        row("🧱 Плитка",            CallbackData.CAT_TILE),
+                        row("🖼 Обои",             CallbackData.CAT_WALLPAPER),
+                        row("⬅️ В меню",          CallbackData.MENU)
                 )
         );
 
@@ -43,7 +46,9 @@ public class CatalogService {
     }
 
     @SneakyThrows
-    public void showCategory(Long chatId, String category) {
+    public void showCategory(Long chatId, CatalogCategory category) {
+
+        // И тут тоже enum
         List<CatalogItem> items = repository.findByCategory(category);
 
         if (items.isEmpty()) {
@@ -55,17 +60,14 @@ public class CatalogService {
             InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
                     List.of(
                             row("🖼 Посмотреть фото", item.getPhotoUrl()),
-                            row("⬅️ Назад", "catalog")
+                            row("⬅️ Назад",          CallbackData.CATALOG)
                     )
             );
 
             telegramClient.execute(
                     SendMessage.builder()
                             .chatId(chatId)
-                            .text(
-                                    "📦 <b>" + item.getName() + "</b>\n\n" +
-                                            item.getDescription()
-                            )
+                            .text("📦 <b>" + item.getName() + "</b>\n\n" + item.getDescription())
                             .parseMode("HTML")
                             .replyMarkup(markup)
                             .build()
@@ -73,14 +75,14 @@ public class CatalogService {
         }
     }
 
+    // Один ряд клавиатуры с одной кнопкой
     private InlineKeyboardRow row(String text, String data) {
-
         InlineKeyboardButton btn = InlineKeyboardButton.builder()
                 .text(text)
                 .build();
 
         if (data == null || data.isBlank()) {
-            btn.setCallbackData("noop");
+            btn.setCallbackData(CallbackData.IGNORE);
         } else if (data.startsWith("http")) {
             btn.setUrl(data);
         } else {

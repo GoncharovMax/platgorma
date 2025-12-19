@@ -3,6 +3,8 @@ package ru.goncharov.study.platforma.handler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
+import ru.goncharov.study.platforma.CallbackData;
+import ru.goncharov.study.platforma.Entity.CatalogCategory;
 import ru.goncharov.study.platforma.service.*;
 
 @Component
@@ -16,25 +18,30 @@ public class CallbackHandler {
     private final CatalogService catalogService;
 
     public void handle(CallbackQuery cb) throws Exception {
-        Long chatId = cb.getFrom().getId();
+
+        Long chatId = cb.getMessage().getChatId();
         String data = cb.getData();
 
-        switch (data) {
-            case "menu" -> menuService.sendMainMenu(chatId);
-            case "test" -> surveyService.start(chatId);
-            case "record" -> appointmentService.start(chatId);
-            case "catalog" -> catalogService.showCategories(chatId);
+        if (data == null || data.isBlank()) {
+            return;
+        }
 
-            case "CAT_QUARTZ" -> catalogService.showCategory(chatId, "QUARTZ_LAMINATE");
-            case "CAT_TILE" -> catalogService.showCategory(chatId, "TILE");
-            case "CAT_WALLPAPER" -> catalogService.showCategory(chatId, "WALLPAPER");
+        switch (data) {
+            case CallbackData.MENU   -> menuService.sendMainMenu(chatId);
+            case CallbackData.TEST   -> surveyService.start(chatId);
+            case CallbackData.RECORD -> appointmentService.start(chatId);
+            case CallbackData.CATALOG-> catalogService.showCategories(chatId);
+
+            case CallbackData.CAT_QUARTZ    -> catalogService.showCategory(chatId, CatalogCategory.QUARTZ_LAMINATE);
+            case CallbackData.CAT_TILE      -> catalogService.showCategory(chatId, CatalogCategory.TILE);
+            case CallbackData.CAT_WALLPAPER -> catalogService.showCategory(chatId, CatalogCategory.WALLPAPER);
 
             default -> {
-                if (data.startsWith("DAY_")) {
+                if (CallbackData.isDay(data)) {
                     appointmentService.handleDay(chatId, data);
-                } else if (data.startsWith("TIME_")) {
+                } else if (CallbackData.isTime(data)) {
                     appointmentService.handleTime(chatId, data);
-                } else if (data.startsWith("PREV_") || data.startsWith("NEXT_")) {
+                } else if (CallbackData.isPrevOrNext(data)) {
                     calendarService.changeMonth(chatId, data);
                 }
             }

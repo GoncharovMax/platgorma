@@ -6,12 +6,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+
 @Entity
 @Table(name = "catalog_items")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
+@Getter @Setter
+@NoArgsConstructor @AllArgsConstructor
 public class CatalogItem {
 
     @Id
@@ -26,5 +25,6 @@ public class CatalogItem {
     @Column(name = "photo_url", length = 1000)
     private String photoUrl;
 
-    private String category;
+    @Enumerated(EnumType.STRING)
+    private CatalogCategory category;
 }

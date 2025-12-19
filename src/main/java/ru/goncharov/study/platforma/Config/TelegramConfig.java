@@ -15,7 +15,7 @@ public class TelegramConfig {
     public TelegramConfig(BotProperties botProperties) {
         this.botProperties = botProperties;
     }
-
+    // Создаём bean TelegramClient, чтобы внедрять его в сервисы
     @Bean
     public TelegramClient telegramClient() {
         return new OkHttpTelegramClient(botProperties.getToken());
