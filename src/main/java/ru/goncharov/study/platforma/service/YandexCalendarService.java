@@ -35,10 +35,10 @@ public class YandexCalendarService {
         try {
             String uid = UUID.randomUUID().toString();
 
-            ZoneOffset offset = ZoneOffset.systemDefault().getRules().getOffset(Instant.now());
             LocalDateTime localStart = date.atTime(time);
-            Instant startInstant = localStart.toInstant(offset);
-            Instant endInstant = localStart.plusHours(1).toInstant(offset);
+            ZoneId zone = ZoneId.systemDefault();
+            Instant startInstant = localStart.atZone(zone).toInstant();
+            Instant endInstant = localStart.plusHours(1).atZone(zone).toInstant();
 
             String dtStart = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
                     .withZone(ZoneOffset.UTC)
@@ -106,5 +106,37 @@ public class YandexCalendarService {
                 .replace("\n", "\\n")
                 .replace(",", "\\,")
                 .replace(";", "\\;");
+    }
+
+    public boolean deleteEvent(String uid) {
+        if (uid == null || uid.isBlank()) return false;
+
+        try {
+            String url = calendarUrl;
+            if (!url.endsWith("/")) url += "/";
+            url = url + uid + ".ics";
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .delete()
+                    .header("Authorization", Credentials.basic(username, appPassword))
+                    .build();
+
+            try (Response response = client.newCall(request).execute()) {
+                if (response.isSuccessful() || response.code() == 404) {
+                    // 404 тоже можно считать "успешно", события уже нет
+                    log.info("Событие удалено (или уже отсутствует). UID={}, code={}", uid, response.code());
+                    return true;
+                }
+
+                log.error("Yandex CalDAV delete ошибка: {} - {}",
+                        response.code(),
+                        response.body() != null ? response.body().string() : "<empty>");
+            }
+        } catch (Exception e) {
+            log.error("Ошибка deleteEvent()", e);
+        }
+
+        return false;
     }
 }

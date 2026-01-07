@@ -18,12 +18,17 @@ public class MessageHandler {
 
     public void handle(Message msg) throws Exception {
         Long chatId = msg.getChatId();
-        String text = msg.getText();
+        String text = msg.hasText() ? msg.getText() : null;
 
         if (surveyService.process(chatId, text)) return;
 
-        if ("/start".equals(text)) menuService.sendMainMenu(chatId);
-        else menuService.sendUnknown(chatId);
+        if ("/start".equals(text)){
+            menuService.sendMainMenu(chatId);
+        } else if (text != null){
+            menuService.sendUnknown(chatId);
+        }else {
+            menuService.sendUnknown(chatId);
+        }
 
         if (msg.hasPhoto()) {
             String fileId = msg.getPhoto().getLast().getFileId();

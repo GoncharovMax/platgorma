@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 import ru.goncharov.study.platforma.Entity.AppointmentEntity;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
@@ -14,4 +15,7 @@ public interface AppointmentRepository extends JpaRepository<AppointmentEntity, 
     List<AppointmentEntity> findByDate(LocalDate date);
 
     boolean existsByDateAndTime(LocalDate date, LocalTime time);
+
+    List<AppointmentEntity> findByNotifiedFalseAndRemindAtLessThanEqual(LocalDateTime now);
+
 }

@@ -4,8 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import ru.goncharov.study.platforma.CallbackData;
-import ru.goncharov.study.platforma.Entity.CatalogCategory;
-import ru.goncharov.study.platforma.service.*;
+//import ru.goncharov.study.platforma.Entity.CatalogCategory;
+import ru.goncharov.study.platforma.service.*   ;
 
 @Component
 @RequiredArgsConstructor
@@ -15,7 +15,7 @@ public class CallbackHandler {
     private final SurveyService surveyService;
     private final AppointmentService appointmentService;
     private final CalendarService calendarService;
-    private final CatalogService catalogService;
+    //private final CatalogService catalogService;
 
     public void handle(CallbackQuery cb) throws Exception {
 
@@ -30,11 +30,11 @@ public class CallbackHandler {
             case CallbackData.MENU   -> menuService.sendMainMenu(chatId);
             case CallbackData.TEST   -> surveyService.start(chatId);
             case CallbackData.RECORD -> appointmentService.start(chatId);
-            case CallbackData.CATALOG-> catalogService.showCategories(chatId);
+            //case CallbackData.CATALOG-> catalogService.showCategories(chatId);
 
-            case CallbackData.CAT_QUARTZ    -> catalogService.showCategory(chatId, CatalogCategory.QUARTZ_LAMINATE);
-            case CallbackData.CAT_TILE      -> catalogService.showCategory(chatId, CatalogCategory.TILE);
-            case CallbackData.CAT_WALLPAPER -> catalogService.showCategory(chatId, CatalogCategory.WALLPAPER);
+            //case CallbackData.CAT_QUARTZ    -> catalogService.showCategory(chatId, CatalogCategory.QUARTZ_LAMINATE);
+            //case CallbackData.CAT_TILE      -> catalogService.showCategory(chatId, CatalogCategory.TILE);
+            //case CallbackData.CAT_WALLPAPER -> catalogService.showCategory(chatId, CatalogCategory.WALLPAPER);
 
             default -> {
                 if (CallbackData.isDay(data)) {
@@ -43,6 +43,9 @@ public class CallbackHandler {
                     appointmentService.handleTime(chatId, data);
                 } else if (CallbackData.isPrevOrNext(data)) {
                     calendarService.changeMonth(chatId, data);
+                }else if (data.startsWith("cancel_")) {
+                    Long id = Long.parseLong(data.substring("cancel_".length()));
+                    appointmentService.cancel(chatId, id);
                 }
             }
         }

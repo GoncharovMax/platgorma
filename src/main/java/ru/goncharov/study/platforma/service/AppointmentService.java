@@ -22,6 +22,7 @@ import ru.goncharov.study.platforma.dto.UserSurveyDto;
 import ru.goncharov.study.platforma.mapper.UserSurveyMapper;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -46,8 +47,12 @@ public class AppointmentService {
 
     // Начало записи на приём
     public void start(Long chatId) throws Exception {
-        UserSurvey survey = surveyRepo.findByChatId(chatId)
-                .orElseThrow();
+        var surveyOpt = surveyRepo.findByChatId(chatId);
+        if (surveyOpt.isEmpty()) {
+            surveyService.start(chatId);
+            return;
+        }
+        UserSurvey survey = surveyOpt.get();
         UserSurveyDto surveyDto = UserSurveyMapper.toDto(survey);
 
         if (surveyDto.state() != SurveyState.FINISHED) {
@@ -95,6 +100,9 @@ public class AppointmentService {
         LocalDate date = LocalDate.parse(parts[1]);
         LocalTime time = LocalTime.parse(parts[2]);
 
+        LocalDateTime appointmentAt = LocalDateTime.of(date, time);
+        LocalDateTime remindAt = appointmentAt.minusHours(24);
+
         if (appointmentRepo.existsByDateAndTime(date, time)) {
             sendBusy(chatId, date);
             return;
@@ -113,7 +121,6 @@ public class AppointmentService {
                 false
         );
 
-        // создаём событие в календаре
         String icsUid = calendarService.createEvent(
                 surveyDto.name(),
                 buildDescription(survey, chatId, date, time),
@@ -122,7 +129,6 @@ public class AppointmentService {
                 time
         );
 
-        // кладём uid в DTO
         dto = new AppointmentDto(
                 dto.id(),
                 dto.chatId(),
@@ -133,11 +139,13 @@ public class AppointmentService {
                 false
         );
 
-        // сохраняем в БД
         AppointmentEntity ap = AppointmentMapper.toEntity(dto);
-        appointmentRepo.save(ap);
+        ap.setRemindAt(remindAt);
+        ap.setNotified(false);
 
-        sendConfirmation(chatId, survey, date, time);
+        ap = appointmentRepo.save(ap);
+
+        sendConfirmation(chatId, survey, date, time, ap.getId());
     }
 
     private void sendBusy(Long chatId, LocalDate date) throws Exception {
@@ -210,7 +218,8 @@ public class AppointmentService {
             Long chatId,
             UserSurvey survey,
             LocalDate date,
-            LocalTime time
+            LocalTime time,
+            Long appointmentId
     ) {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(
                 List.of(
@@ -224,6 +233,12 @@ public class AppointmentService {
                                 InlineKeyboardButton.builder()
                                         .text("Запись на приём")
                                         .callbackData("record")
+                                        .build()
+                        ),
+                        new InlineKeyboardRow(
+                                InlineKeyboardButton.builder()
+                                        .text("❌ Отменить запись")
+                                        .callbackData("cancel_" + appointmentId)
                                         .build()
                         )
                 )
@@ -244,4 +259,52 @@ public class AppointmentService {
                         .build()
         );
     }
+
+    @Transactional
+    @SneakyThrows
+    public void cancel(Long chatId, Long appointmentId) {
+
+        var apOpt = appointmentRepo.findById(appointmentId);
+        if (apOpt.isEmpty()) {
+            telegramClient.execute(SendMessage.builder()
+                    .chatId(chatId)
+                    .text("Запись не найдена 🤷‍♂️")
+                    .build());
+            return;
+        }
+
+        AppointmentEntity ap = apOpt.get();
+
+        // защита: отменять может только владелец
+        if (!ap.getChatId().equals(chatId)) {
+            telegramClient.execute(SendMessage.builder()
+                    .chatId(chatId)
+                    .text("Нельзя отменить чужую запись.")
+                    .build());
+            return;
+        }
+
+        // удалить событие в Яндекс календаре (нужно добавить метод deleteEvent(uid))
+        if (ap.getIcsUid() != null && !ap.getIcsUid().isBlank()) {
+           calendarService.deleteEvent(ap.getIcsUid());
+        }
+
+        appointmentRepo.delete(ap);
+
+        telegramClient.execute(
+                SendMessage.builder()
+                        .chatId(chatId)
+                        .text("✅ Запись отменена.")
+                        .replyMarkup(new InlineKeyboardMarkup(
+                                List.of(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder()
+                                                .text("Записаться заново")
+                                                .callbackData("record")
+                                                .build()
+                                ))
+                        ))
+                        .build()
+        );
+    }
+
 }

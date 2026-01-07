@@ -16,8 +16,6 @@ import ru.goncharov.study.platforma.repository.UserSurveyRepository;
 
 import java.util.List;
 
-import static java.awt.SystemColor.text;
-
 @Service
 @RequiredArgsConstructor
 public class SurveyService {
@@ -29,6 +27,10 @@ public class SurveyService {
     public boolean process(Long chatId, String text) {
         var surveyOpt = repo.findByChatId(chatId);
         if (surveyOpt.isEmpty()) return false;
+        if (text == null || text.isBlank()){
+            send(chatId,"Пожалуйста, отправьте текст сообщением 🙂");
+            return true;
+        }
 
         UserSurvey survey = surveyOpt.get();
         UserSurveyDto dto = UserSurveyMapper.toDto(survey);

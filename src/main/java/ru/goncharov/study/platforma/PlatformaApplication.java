@@ -13,15 +13,19 @@ import ru.goncharov.study.platforma.Config.BotProperties;
 public class PlatformaApplication {
 
     public static void main(String[] args) {
-        Dotenv dotenv = Dotenv.configure()
+        Dotenv dotenvLocal = Dotenv.configure()
+                .filename(".env.local")
                 .ignoreIfMissing()
                 .load();
 
-        dotenv.entries().forEach(entry ->
-                System.setProperty(entry.getKey(), entry.getValue())
-        );
+        Dotenv dotenv = Dotenv.configure()
+                .filename(".env")
+                .ignoreIfMissing()
+                .load();
+
+        dotenv.entries().forEach(e -> System.setProperty(e.getKey(), e.getValue()));
+        dotenvLocal.entries().forEach(e -> System.setProperty(e.getKey(), e.getValue()));
 
         SpringApplication.run(PlatformaApplication.class, args);
     }
-
 }

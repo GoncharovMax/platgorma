@@ -2,14 +2,14 @@ package ru.goncharov.study.platforma.Entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
-@Table (name = "appointments")
+@Table(name = "appointments",
+        uniqueConstraints = @UniqueConstraint(name = "uk_appointments_date_time", columnNames = {"date", "time"}))
 @Data
 public class AppointmentEntity {
 
@@ -26,6 +26,8 @@ public class AppointmentEntity {
     private String fullName;
 
     private String icsUid;
+
+    private LocalDateTime remindAt;
 
     private boolean notified = false;
 
